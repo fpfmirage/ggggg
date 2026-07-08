@@ -1,6 +1,0 @@
-__pycache__/
-*.pyc
-.env
-bot_data.db
-data.json
-channels.json
