@@ -16,8 +16,8 @@ CHANNELS_FILE = "channels.json"
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
-songs = {}       # code -> file_id
-downloads = {}   # code -> count
+songs = {}
+downloads = {}
 
 
 # =======================
@@ -29,7 +29,7 @@ def load_channels():
             with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
         except:
-            return ["@miragemix", "@SnowRemix"]
+            pass
     return ["@miragemix", "@SnowRemix"]
 
 
@@ -60,18 +60,9 @@ async def is_member(user_id):
 # =======================
 def join_button(code):
     kb = InlineKeyboardBuilder()
-
     for ch in CHANNELS:
-        kb.button(
-            text=f"📢 عضویت {ch}",
-            url=f"https://t.me/{ch.replace('@','')}"
-        )
-
-    kb.button(
-        text="✅ عضو شدم",
-        callback_data=f"check_{code}"
-    )
-
+        kb.button(text=f"📢 عضویت {ch}", url=f"https://t.me/{ch.replace('@','')}")
+    kb.button(text="✅ عضو شدم", callback_data=f"check_{code}")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -96,7 +87,6 @@ async def send_song(message, code):
 @dp.message(CommandStart())
 async def start(message: types.Message):
     args = message.text.split()
-
     if len(args) < 2:
         await message.answer("❌ لینک اشتباهه")
         return
@@ -114,21 +104,63 @@ async def start(message: types.Message):
 
 
 # =======================
-# CHECK JOIN BUTTON
+# ADMIN CHANNEL MANAGEMENT (اینجا باید قبل از هندلر عمومی باشه)
 # =======================
-@dp.callback_query(lambda c: c.data.startswith("check_"))
-async def check_join(callback: types.CallbackQuery):
-    code = callback.data.split("_")[1]
+@dp.message(Command("addchannel"))
+async def add_channel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        channel = message.text.split()[1].strip()
+        if not channel.startswith("@"):
+            channel = "@" + channel
 
-    if await is_member(callback.from_user.id):
-        await callback.message.delete()
-        await send_song(callback.message, code)
-    else:
-        await callback.answer("❌ هنوز عضو همه کانال‌ها نیستی", show_alert=True)
+        if channel in CHANNELS:
+            await message.answer(f"⚠️ کانال `{channel}` قبلاً اضافه شده.")
+            return
+
+        CHANNELS.append(channel)
+        save_channels(CHANNELS)
+        await message.answer(f"✅ کانال `{channel}` اضافه شد.")
+    except:
+        await message.answer("❌ نحوه استفاده:\n`/addchannel @username`")
+
+
+@dp.message(Command("removechannel"))
+async def remove_channel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    try:
+        channel = message.text.split()[1].strip()
+        if not channel.startswith("@"):
+            channel = "@" + channel
+
+        if channel not in CHANNELS:
+            await message.answer(f"⚠️ کانال `{channel}` پیدا نشد.")
+            return
+
+        CHANNELS.remove(channel)
+        save_channels(CHANNELS)
+        await message.answer(f"✅ کانال `{channel}` حذف شد.")
+    except:
+        await message.answer("❌ نحوه استفاده:\n`/removechannel @username`")
+
+
+@dp.message(Command("channels"))
+async def list_channels(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if not CHANNELS:
+        await message.answer("📭 هیچ کانالی ثبت نشده.")
+        return
+
+    text = "📋 **کانال‌های فعلی:**\n\n" + "\n".join(f"• {ch}" for ch in CHANNELS)
+    await message.answer(text)
 
 
 # =======================
-# ADMIN: UPLOAD SONG
+# ADMIN UPLOAD SONG (این باید آخرین هندلر باشه)
 # =======================
 @dp.message()
 async def upload(message: types.Message):
@@ -145,71 +177,10 @@ async def upload(message: types.Message):
 
 
 # =======================
-# ADMIN CHANNEL MANAGEMENT
-# =======================
-@dp.message(Command("addchannel"))
-async def add_channel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    try:
-        channel = message.text.split()[1].strip()
-        if not channel.startswith("@"):
-            channel = "@" + channel
-
-        if channel in CHANNELS:
-            await message.answer(f"⚠️ کانال `{channel}` قبلاً اضافه شده.")
-            return
-
-        CHANNELS.append(channel)
-        save_channels(CHANNELS)
-        await message.answer(f"✅ کانال `{channel}` با موفقیت اضافه شد.")
-    except IndexError:
-        await message.answer("❌ نحوه استفاده:\n`/addchannel @username`")
-
-
-@dp.message(Command("removechannel"))
-async def remove_channel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    try:
-        channel = message.text.split()[1].strip()
-        if not channel.startswith("@"):
-            channel = "@" + channel
-
-        if channel not in CHANNELS:
-            await message.answer(f"⚠️ کانال `{channel}` پیدا نشد.")
-            return
-
-        CHANNELS.remove(channel)
-        save_channels(CHANNELS)
-        await message.answer(f"✅ کانال `{channel}` با موفقیت حذف شد.")
-    except IndexError:
-        await message.answer("❌ نحوه استفاده:\n`/removechannel @username`")
-
-
-@dp.message(Command("channels"))
-async def list_channels(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    if not CHANNELS:
-        await message.answer("📭 هیچ کانالی ثبت نشده.")
-        return
-
-    text = "📋 **کانال‌های فعلی:**\n\n"
-    for ch in CHANNELS:
-        text += f"• {ch}\n"
-
-    await message.answer(text)
-
-
-# =======================
 # MAIN
 # =======================
 async def main():
-    print("✅ بات با موفقیت شروع شد!")
+    print("✅ بات شروع شد!")
     print(f"📢 کانال‌های فعلی: {CHANNELS}")
     await dp.start_polling(bot)
 
