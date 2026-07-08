@@ -1,21 +1,44 @@
 from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
+import json
+import os
 
 # =======================
 # CONFIG
 # =======================
 TOKEN = "8836838419:AAEmSkrIGvfbxwKeOH1IIT51ht6lY9ZiZzg"
 
-CHANNELS = ["@miragemix", "@SnowRemix","@daarkkheart"]
-ADMIN_ID = [5681523384,7243699586]
+ADMIN_ID = 5681523384
+CHANNELS_FILE = "channels.json"
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
 songs = {}       # code -> file_id
 downloads = {}   # code -> count
+
+
+# =======================
+# LOAD / SAVE CHANNELS
+# =======================
+def load_channels():
+    if os.path.exists(CHANNELS_FILE):
+        try:
+            with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return ["@miragemix", "@SnowRemix"]
+    return ["@miragemix", "@SnowRemix"]
+
+
+def save_channels(channels):
+    with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
+        json.dump(channels, f, ensure_ascii=False, indent=2)
+
+
+CHANNELS = load_channels()
 
 
 # =======================
@@ -57,16 +80,12 @@ def join_button(code):
 # SEND SONG
 # =======================
 async def send_song(message, code):
-
     if code in songs:
-
         downloads[code] = downloads.get(code, 0) + 1
-
         await message.answer_audio(
             songs[code],
             caption=f"🎵 دانلود شد | {downloads[code]} بار"
         )
-
     else:
         await message.answer("❌ آهنگ پیدا نشد")
 
@@ -76,7 +95,6 @@ async def send_song(message, code):
 # =======================
 @dp.message(CommandStart())
 async def start(message: types.Message):
-
     args = message.text.split()
 
     if len(args) < 2:
@@ -87,7 +105,7 @@ async def start(message: types.Message):
 
     if not await is_member(message.from_user.id):
         await message.answer(
-            "❌ برای دریافت آهنگ باید عضو کانال‌ها بشی",
+            "❌ برای دریافت آهنگ باید عضو همه کانال‌ها بشی:",
             reply_markup=join_button(code)
         )
         return
@@ -100,46 +118,99 @@ async def start(message: types.Message):
 # =======================
 @dp.callback_query(lambda c: c.data.startswith("check_"))
 async def check_join(callback: types.CallbackQuery):
-
     code = callback.data.split("_")[1]
 
     if await is_member(callback.from_user.id):
-
         await callback.message.delete()
         await send_song(callback.message, code)
-
     else:
-        await callback.answer(
-            "❌ هنوز عضو همه کانال‌ها نیستی",
-            show_alert=True
-        )
+        await callback.answer("❌ هنوز عضو همه کانال‌ها نیستی", show_alert=True)
 
 
 # =======================
-# ADMIN UPLOAD SONG
+# ADMIN: UPLOAD SONG
 # =======================
 @dp.message()
 async def upload(message: types.Message):
-
     if message.from_user.id != ADMIN_ID:
         return
 
     if message.audio:
-
         code = message.audio.file_unique_id
-
         songs[code] = message.audio.file_id
         downloads[code] = 0
 
         link = f"https://t.me/{(await bot.get_me()).username}?start={code}"
-
         await message.answer(f"✅ لینک ساخته شد:\n{link}")
+
+
+# =======================
+# ADMIN CHANNEL MANAGEMENT
+# =======================
+@dp.message(Command("addchannel"))
+async def add_channel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        channel = message.text.split()[1].strip()
+        if not channel.startswith("@"):
+            channel = "@" + channel
+
+        if channel in CHANNELS:
+            await message.answer(f"⚠️ کانال `{channel}` قبلاً اضافه شده.")
+            return
+
+        CHANNELS.append(channel)
+        save_channels(CHANNELS)
+        await message.answer(f"✅ کانال `{channel}` با موفقیت اضافه شد.")
+    except IndexError:
+        await message.answer("❌ نحوه استفاده:\n`/addchannel @username`")
+
+
+@dp.message(Command("removechannel"))
+async def remove_channel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    try:
+        channel = message.text.split()[1].strip()
+        if not channel.startswith("@"):
+            channel = "@" + channel
+
+        if channel not in CHANNELS:
+            await message.answer(f"⚠️ کانال `{channel}` پیدا نشد.")
+            return
+
+        CHANNELS.remove(channel)
+        save_channels(CHANNELS)
+        await message.answer(f"✅ کانال `{channel}` با موفقیت حذف شد.")
+    except IndexError:
+        await message.answer("❌ نحوه استفاده:\n`/removechannel @username`")
+
+
+@dp.message(Command("channels"))
+async def list_channels(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if not CHANNELS:
+        await message.answer("📭 هیچ کانالی ثبت نشده.")
+        return
+
+    text = "📋 **کانال‌های فعلی:**\n\n"
+    for ch in CHANNELS:
+        text += f"• {ch}\n"
+
+    await message.answer(text)
 
 
 # =======================
 # MAIN
 # =======================
 async def main():
+    print("✅ بات با موفقیت شروع شد!")
+    print(f"📢 کانال‌های فعلی: {CHANNELS}")
     await dp.start_polling(bot)
 
 
