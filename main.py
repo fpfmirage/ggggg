@@ -1,6 +1,7 @@
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.enums import ContentType
 import asyncio
 import json
 import os
@@ -44,7 +45,7 @@ CHANNELS = load_channels()
 # =======================
 # CHECK MEMBERSHIP
 # =======================
-async def is_member(user_id):
+async def is_member(user_id: int) -> bool:
     for ch in CHANNELS:
         try:
             member = await bot.get_chat_member(ch, user_id)
@@ -58,7 +59,7 @@ async def is_member(user_id):
 # =======================
 # JOIN BUTTON
 # =======================
-def join_button(code):
+def join_button(code: str):
     kb = InlineKeyboardBuilder()
     for ch in CHANNELS:
         kb.button(text=f"📢 عضویت {ch}", url=f"https://t.me/{ch.replace('@','')}")
@@ -70,7 +71,7 @@ def join_button(code):
 # =======================
 # SEND SONG
 # =======================
-async def send_song(message, code):
+async def send_song(message: types.Message, code: str):
     if code in songs:
         downloads[code] = downloads.get(code, 0) + 1
         await message.answer_audio(
@@ -104,7 +105,7 @@ async def start(message: types.Message):
 
 
 # =======================
-# ADMIN CHANNEL MANAGEMENT (اینجا باید قبل از هندلر عمومی باشه)
+# ADMIN COMMANDS
 # =======================
 @dp.message(Command("addchannel"))
 async def add_channel(message: types.Message):
@@ -155,35 +156,4 @@ async def list_channels(message: types.Message):
         await message.answer("📭 هیچ کانالی ثبت نشده.")
         return
 
-    text = "📋 **کانال‌های فعلی:**\n\n" + "\n".join(f"• {ch}" for ch in CHANNELS)
-    await message.answer(text)
-
-
-# =======================
-# ADMIN UPLOAD SONG (این باید آخرین هندلر باشه)
-# =======================
-@dp.message()
-async def upload(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-
-    if message.audio:
-        code = message.audio.file_unique_id
-        songs[code] = message.audio.file_id
-        downloads[code] = 0
-
-        link = f"https://t.me/{(await bot.get_me()).username}?start={code}"
-        await message.answer(f"✅ لینک ساخته شد:\n{link}")
-
-
-# =======================
-# MAIN
-# =======================
-async def main():
-    print("✅ بات شروع شد!")
-    print(f"📢 کانال‌های فعلی: {CHANNELS}")
-    await dp.start_polling(bot)
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    text = "📋 **کان​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
