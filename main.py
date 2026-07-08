@@ -1,40 +1,147 @@
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
-from telegram import Bot, Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime
-import pytz
 
-# تنظیمات
-TOKEN = '8066681959:AAHe5wbH7gHivg7296Iy9URQnfNEIMvsrJI'
-CHAT_ID = '@FM_MIRAGE'
+# =======================
+# CONFIG
+# =======================
+TOKEN = "8836838419:AAEmSkrIGvfbxwKeOH1IIT51ht6lY9ZiZzg"
 
-# تابع زمان‌بندی‌شده
-async def send_message():
-    bot = Bot(token=TOKEN)
-    await bot.send_message(chat_id=CHAT_ID, text="سلام دختر بابایییی صبحتر بخیر بابیی عاشقته")
-    print(f"پیام روزانه فرستاده شد: {datetime.now()}")
+CHANNELS = ["@miragemix", "@SnowRemix","@daarkkheart"]
+ADMIN_ID = [5681523384,7243699586]
 
-# تابع هندلر برای /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("سلام! من دستیار متینم، برای اینکه هرروز از طرف متین صبح بخیر بگم.")
-    print(f"کاربر /start زد - Chat ID: {update.effective_chat.id}")
+bot = Bot(TOKEN)
+dp = Dispatcher()
 
-# تابع اصلی
+songs = {}       # code -> file_id
+downloads = {}   # code -> count
+
+
+# =======================
+# CHECK MEMBERSHIP
+# =======================
+async def is_member(user_id):
+    for ch in CHANNELS:
+        try:
+            member = await bot.get_chat_member(ch, user_id)
+            if member.status in ["left", "kicked"]:
+                return False
+        except:
+            return False
+    return True
+
+
+# =======================
+# JOIN BUTTON
+# =======================
+def join_button(code):
+    kb = InlineKeyboardBuilder()
+
+    for ch in CHANNELS:
+        kb.button(
+            text=f"📢 عضویت {ch}",
+            url=f"https://t.me/{ch.replace('@','')}"
+        )
+
+    kb.button(
+        text="✅ عضو شدم",
+        callback_data=f"check_{code}"
+    )
+
+    kb.adjust(1)
+    return kb.as_markup()
+
+
+# =======================
+# SEND SONG
+# =======================
+async def send_song(message, code):
+
+    if code in songs:
+
+        downloads[code] = downloads.get(code, 0) + 1
+
+        await message.answer_audio(
+            songs[code],
+            caption=f"🎵 دانلود شد | {downloads[code]} بار"
+        )
+
+    else:
+        await message.answer("❌ آهنگ پیدا نشد")
+
+
+# =======================
+# START COMMAND
+# =======================
+@dp.message(CommandStart())
+async def start(message: types.Message):
+
+    args = message.text.split()
+
+    if len(args) < 2:
+        await message.answer("❌ لینک اشتباهه")
+        return
+
+    code = args[1]
+
+    if not await is_member(message.from_user.id):
+        await message.answer(
+            "❌ برای دریافت آهنگ باید عضو کانال‌ها بشی",
+            reply_markup=join_button(code)
+        )
+        return
+
+    await send_song(message, code)
+
+
+# =======================
+# CHECK JOIN BUTTON
+# =======================
+@dp.callback_query(lambda c: c.data.startswith("check_"))
+async def check_join(callback: types.CallbackQuery):
+
+    code = callback.data.split("_")[1]
+
+    if await is_member(callback.from_user.id):
+
+        await callback.message.delete()
+        await send_song(callback.message, code)
+
+    else:
+        await callback.answer(
+            "❌ هنوز عضو همه کانال‌ها نیستی",
+            show_alert=True
+        )
+
+
+# =======================
+# ADMIN UPLOAD SONG
+# =======================
+@dp.message()
+async def upload(message: types.Message):
+
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if message.audio:
+
+        code = message.audio.file_unique_id
+
+        songs[code] = message.audio.file_id
+        downloads[code] = 0
+
+        link = f"https://t.me/{(await bot.get_me()).username}?start={code}"
+
+        await message.answer(f"✅ لینک ساخته شد:\n{link}")
+
+
+# =======================
+# MAIN
+# =======================
 async def main():
-    # ساخت Application و تنظیم توکن
-    application = ApplicationBuilder().token(TOKEN).build()
+    await dp.start_polling(bot)
 
-    # هندلر /start
-    application.add_handler(CommandHandler("start", start))
 
-    # زمان‌بندی روزانه
-    scheduler = AsyncIOScheduler(timezone=pytz.timezone('Asia/Tehran'))
-    scheduler.add_job(send_message, 'cron', hour=6, minute=0)
-    scheduler.start()
-
-    # شروع ربات و گوش دادن به پیام‌ها
-    await application.run_polling()
-
-if _name_ == '_main_':
+if __name__ == "__main__":
     asyncio.run(main())
