@@ -9,9 +9,9 @@ import os
 # =======================
 # CONFIG
 # =======================
-TOKEN = "8836838419:AAEmSkrIGvfbxwKeOH1IIT51ht6lY9ZiZzg"
+TOKEN = "8836838419:AAEmSkrIGvfbxwKeOH1IIT51ht6lY9ZiZzg"          # ← توکن ربات رو اینجا بذار
 
-ADMIN_ID = 5681523384
+ADMIN_ID = 5681523384                       # ← آیدی عددی خودت رو اینجا بذار
 CHANNELS_FILE = "channels.json"
 
 bot = Bot(TOKEN)
@@ -150,10 +150,42 @@ async def remove_channel(message: types.Message):
 @dp.message(Command("channels"))
 async def list_channels(message: types.Message):
     if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ فقط ادمین اجازه دسترسی داره.")
         return
 
     if not CHANNELS:
         await message.answer("📭 هیچ کانالی ثبت نشده.")
         return
 
-    text = "📋 **کان​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​​
+    text = "📋 **کانال‌های فعلی:**\n\n" + "\n".join(f"• {ch}" for ch in CHANNELS)
+    await message.answer(text)
+
+
+# =======================
+# ADMIN UPLOAD SONG
+# =======================
+@dp.message(F.content_type == ContentType.AUDIO)
+async def upload(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    code = message.audio.file_unique_id
+    songs[code] = message.audio.file_id
+    downloads[code] = 0
+
+    link = f"https://t.me/{(await bot.get_me()).username}?start={code}"
+    await message.answer(f"✅ لینک ساخته شد:\n{link}")
+
+
+# =======================
+# MAIN
+# =======================
+async def main():
+    print("✅ بات با موفقیت شروع شد!")
+    print(f"👤 ADMIN_ID: {ADMIN_ID}")
+    print(f"📢 کانال‌های فعلی: {CHANNELS}")
+    await dp.start_polling(bot)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
