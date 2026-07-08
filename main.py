@@ -2,88 +2,43 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import CommandStart, Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
-import aiosqlite
+import json
 import os
 
 # =======================
 # CONFIG
 # =======================
 TOKEN = "8836838419:AAEmSkrIGvfbxwKeOH1IIT51ht6lY9ZiZzg"
+
 ADMIN_ID = 5681523384
-DB_FILE = "bot_data.db"          # فایل دیتابیس
+CHANNELS_FILE = "channels.json"
 
 bot = Bot(TOKEN)
 dp = Dispatcher()
 
-# =======================
-# DATABASE SETUP
-# =======================
-async def init_db():
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS songs (
-                code TEXT PRIMARY KEY,
-                file_id TEXT,
-                downloads INTEGER DEFAULT 0
-            )
-        """)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS channels (
-                channel TEXT PRIMARY KEY
-            )
-        """)
-        await db.commit()
-
-
-async def load_channels():
-    async with aiosqlite.connect(DB_FILE) as db:
-        cursor = await db.execute("SELECT channel FROM channels")
-        rows = await cursor.fetchall()
-        channels = [row[0] for row in rows]
-        return channels if channels else ["@miragemix", "@SnowRemix"]
-
-
-async def save_channel(channel: str):
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute("INSERT OR IGNORE INTO channels (channel) VALUES (?)", (channel,))
-        await db.commit()
-
-
-async def remove_channel(channel: str):
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute("DELETE FROM channels WHERE channel = ?", (channel,))
-        await db.commit()
-
-
-async def get_song(code: str):
-    async with aiosqlite.connect(DB_FILE) as db:
-        cursor = await db.execute("SELECT file_id, downloads FROM songs WHERE code = ?", (code,))
-        row = await cursor.fetchone()
-        return row if row else None
-
-
-async def save_song(code: str, file_id: str):
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO songs (code, file_id, downloads) VALUES (?, ?, 0)",
-            (code, file_id)
-        )
-        await db.commit()
-
-
-async def increment_download(code: str):
-    async with aiosqlite.connect(DB_FILE) as db:
-        await db.execute(
-            "UPDATE songs SET downloads = downloads + 1 WHERE code = ?",
-            (code,)
-        )
-        await db.commit()
+songs = {}
+downloads = {}
 
 
 # =======================
-# INITIALIZE
+# LOAD / SAVE CHANNELS
 # =======================
-CHANNELS = []
+def load_channels():
+    if os.path.exists(CHANNELS_FILE):
+        try:
+            with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            pass
+    return ["@miragemix", "@SnowRemix"]
+
+
+def save_channels(channels):
+    with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
+        json.dump(channels, f, ensure_ascii=False, indent=2)
+
+
+CHANNELS = load_channels()
 
 
 # =======================
@@ -100,6 +55,9 @@ async def is_member(user_id):
     return True
 
 
+# =======================
+# JOIN BUTTON
+# =======================
 def join_button(code):
     kb = InlineKeyboardBuilder()
     for ch in CHANNELS:
@@ -113,14 +71,11 @@ def join_button(code):
 # SEND SONG
 # =======================
 async def send_song(message, code):
-    song = await get_song(code)
-    if song:
-        file_id, downloads_count = song
-        await increment_download(code)
-        new_count = downloads_count + 1
+    if code in songs:
+        downloads[code] = downloads.get(code, 0) + 1
         await message.answer_audio(
-            file_id,
-            caption=f"🎵 دانلود شد | {new_count} بار"
+            songs[code],
+            caption=f"🎵 دانلود شد | {downloads[code]} بار"
         )
     else:
         await message.answer("❌ آهنگ پیدا نشد")
@@ -149,11 +104,12 @@ async def start(message: types.Message):
 
 
 # =======================
-# ADMIN COMMANDS
+# ADMIN CHANNEL MANAGEMENT (اینجا باید قبل از هندلر عمومی باشه)
 # =======================
 @dp.message(Command("addchannel"))
 async def add_channel(message: types.Message):
-    if message.from_user.id != ADMIN_ID: return
+    if message.from_user.id != ADMIN_ID:
+        return
     try:
         channel = message.text.split()[1].strip()
         if not channel.startswith("@"):
@@ -163,16 +119,17 @@ async def add_channel(message: types.Message):
             await message.answer(f"⚠️ کانال `{channel}` قبلاً اضافه شده.")
             return
 
-        await save_channel(channel)
         CHANNELS.append(channel)
+        save_channels(CHANNELS)
         await message.answer(f"✅ کانال `{channel}` اضافه شد.")
     except:
         await message.answer("❌ نحوه استفاده:\n`/addchannel @username`")
 
 
 @dp.message(Command("removechannel"))
-async def remove_channel_cmd(message: types.Message):
-    if message.from_user.id != ADMIN_ID: return
+async def remove_channel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
     try:
         channel = message.text.split()[1].strip()
         if not channel.startswith("@"):
@@ -182,8 +139,8 @@ async def remove_channel_cmd(message: types.Message):
             await message.answer(f"⚠️ کانال `{channel}` پیدا نشد.")
             return
 
-        await remove_channel(channel)
         CHANNELS.remove(channel)
+        save_channels(CHANNELS)
         await message.answer(f"✅ کانال `{channel}` حذف شد.")
     except:
         await message.answer("❌ نحوه استفاده:\n`/removechannel @username`")
@@ -191,13 +148,19 @@ async def remove_channel_cmd(message: types.Message):
 
 @dp.message(Command("channels"))
 async def list_channels(message: types.Message):
-    if message.from_user.id != ADMIN_ID: return
-    text = "📋 **کانال‌های فعلی:**\n\n" + "\n".join(f"• {ch}" for ch in CHANNELS) if CHANNELS else "📭 هیچ کانالی ثبت نشده."
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    if not CHANNELS:
+        await message.answer("📭 هیچ کانالی ثبت نشده.")
+        return
+
+    text = "📋 **کانال‌های فعلی:**\n\n" + "\n".join(f"• {ch}" for ch in CHANNELS)
     await message.answer(text)
 
 
 # =======================
-# UPLOAD SONG
+# ADMIN UPLOAD SONG (این باید آخرین هندلر باشه)
 # =======================
 @dp.message()
 async def upload(message: types.Message):
@@ -206,7 +169,8 @@ async def upload(message: types.Message):
 
     if message.audio:
         code = message.audio.file_unique_id
-        await save_song(code, message.audio.file_id)
+        songs[code] = message.audio.file_id
+        downloads[code] = 0
 
         link = f"https://t.me/{(await bot.get_me()).username}?start={code}"
         await message.answer(f"✅ لینک ساخته شد:\n{link}")
@@ -216,21 +180,9 @@ async def upload(message: types.Message):
 # MAIN
 # =======================
 async def main():
-    global CHANNELS
-    await init_db()
-    CHANNELS = await load_channels()
-    
-    print("✅ بات با SQLite شروع شد!")
-    print(f"📀 تعداد آهنگ‌های ذخیره شده: {await get_song_count()}")
-    print(f"📢 کانال‌ها: {CHANNELS}")
+    print("✅ بات شروع شد!")
+    print(f"📢 کانال‌های فعلی: {CHANNELS}")
     await dp.start_polling(bot)
-
-
-async def get_song_count():
-    async with aiosqlite.connect(DB_FILE) as db:
-        cursor = await db.execute("SELECT COUNT(*) FROM songs")
-        count = (await cursor.fetchone())[0]
-        return count
 
 
 if __name__ == "__main__":
